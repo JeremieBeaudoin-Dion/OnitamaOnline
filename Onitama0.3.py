@@ -21,8 +21,6 @@ class Game(ConnectionListener):
         # Game State
         self.state = "menu"
 
-        # // TODO: change host
-        # host, port = "63.251.20.251", 8888
         self.host = "localhost"
         self.port = 8888
 
