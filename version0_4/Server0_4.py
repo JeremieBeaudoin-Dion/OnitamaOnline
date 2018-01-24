@@ -56,19 +56,17 @@ class ClientChannel(Channel):  # cette classe sert de pont entre le client et le
 
 
 class Server(PodSixNet.Server.Server):
+    channelClass = ClientChannel
 
     def __init__(self, *args, **kwargs):
         # Server data
         PodSixNet.Server.Server.__init__(self, *args, **kwargs)
-        Server.__init__(self)
         self.versionNeeded = "0.3"  # The versions that can run the game
         self.games = []
         self.playerchannels = dict()
         self.queue = Queue()
         self.currentIndex = 0
         self.currentPlayerID = 0
-
-    channelClass = ClientChannel
 
     def Connected(self, channel, addr):
         print 'new connection:', channel
@@ -152,7 +150,7 @@ class Game:
         self.sendinitialinfotoplayers()
 
     def randomizeplayers(self):
-        if random.randint(1) == 0:
+        if random.randint(0, 1) == 0:
             temp = self.player0
             self.player0 = self.player1
             self.player1 = self.player0
@@ -163,8 +161,10 @@ class Game:
         # Change game card's order for the other player
         Deck.reversedeck(self.cards)
 
-        self.player1.Send({"action": "startgame", "player": 1, "gameid": self.queue.gameid,
+        self.player1.Send({"action": "startgame", "player": 1, "gameid": self.gameid,
                                  "cards": self.cards})
+
+        print("Starting game number: " + str(self.gameid))
 
     def nextturn(self, num, card, board):
         if num == 1:

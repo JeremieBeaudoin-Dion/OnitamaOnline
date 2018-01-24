@@ -85,14 +85,6 @@ class TestQueue(unittest.TestCase):
 
         self.assertEqual(queue.getsize(), 1)
 
-    def test_add2players(self):
-
-        Deck = Deck()
-        queue = Queue()
-        queue.addPlayer("channel1", "mypreferences")
-
-        self.assertRaises(queue.addPlayer("channel2", "otherpref"))
-
 
 testdeck = unittest.TestLoader().loadTestsFromTestCase(TestDeck)
 unittest.TextTestRunner(verbosity=2).run(testdeck)
