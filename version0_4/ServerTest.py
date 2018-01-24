@@ -2,6 +2,7 @@
 import random
 import unittest
 from Server0_4 import Deck
+from Server0_4 import Queue
 
 __author__ = 'Jérémie Beaudoin-Dion'
 
@@ -66,6 +67,36 @@ class TestDeck(unittest.TestCase):
         for card in gameCards:
             self.assertEqual(desireddeck.count(card), 1)
 
+    def test_reversedeck(self):
+        mydeck = ['hello', 'darkness', 'my', 'old', 'friend']
+        expectedresult = ['my', 'old', 'hello', 'darkness', 'friend']
 
-suite = unittest.TestLoader().loadTestsFromTestCase(TestDeck)
-unittest.TextTestRunner(verbosity=2).run(suite)
+        Deck().reversedeck(mydeck)
+
+        self.assertEqual(mydeck, expectedresult)
+
+
+class TestQueue(unittest.TestCase):
+
+    def test_add1player(self):
+
+        queue = Queue()
+        queue.addPlayer("channel1", "mypreferences")
+
+        self.assertEqual(queue.getsize(), 1)
+
+    def test_add2players(self):
+
+        Deck = Deck()
+        queue = Queue()
+        queue.addPlayer("channel1", "mypreferences")
+
+        self.assertRaises(queue.addPlayer("channel2", "otherpref"))
+
+
+testdeck = unittest.TestLoader().loadTestsFromTestCase(TestDeck)
+unittest.TextTestRunner(verbosity=2).run(testdeck)
+
+
+testqueue = unittest.TestLoader().loadTestsFromTestCase(TestQueue)
+unittest.TextTestRunner(verbosity=2).run(testqueue)

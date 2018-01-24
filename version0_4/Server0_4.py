@@ -45,7 +45,7 @@ class ClientChannel(Channel):  # cette classe sert de pont entre le client et le
     def Network_queueQUIT(self, data):
         playerid = data["id"]
 
-        self._server.stopqueue()
+        self._server.quitqueue(playerid)
         self._server.kickPlayer(playerid)
 
     # Leaves the server
@@ -55,72 +55,49 @@ class ClientChannel(Channel):  # cette classe sert de pont entre le client et le
         self._server.kickPlayer(playerid)
 
 
-class Server(PodSixNet.Server.Server):  # classe du serveur comme tel
+class Server(PodSixNet.Server.Server):
 
     def __init__(self, *args, **kwargs):
         # Server data
         PodSixNet.Server.Server.__init__(self, *args, **kwargs)
+        Server.__init__(self)
         self.versionNeeded = "0.3"  # The versions that can run the game
-        self.games = []  # represent games
-        self.player = dict()  # All players currently on the server
-        self.queue = None  # represent if their is a queue currently
-        self.currentIndex = 0  # current index of games
+        self.games = []
+        self.playerchannels = dict()
+        self.queue = Queue()
+        self.currentIndex = 0
         self.currentPlayerID = 0
-
-        self.pendingpreferences = []  # There is never more than one player in queue
 
     channelClass = ClientChannel
 
     def Connected(self, channel, addr):
         print 'new connection:', channel
-        self.player.update({self.currentPlayerID: channel})
-        self.player[self.currentPlayerID].Send({"action": "connecting", "id": self.currentPlayerID, "version": "0.3"})
+        self.playerchannels.update({self.currentPlayerID: channel})
+        self.playerchannels[self.currentPlayerID].Send({"action": "connecting", "id": self.currentPlayerID, "version": "0.3"})
         self.currentPlayerID += 1
 
+    def Queue(self, playerid, playerpreferences):
+        self.queue.addPlayer(self.playerchannels[playerid], playerpreferences)
+
+    def createNewGame(self, credentials):
+        self.games.append(Game(self.currentIndex, credentials))
+
+        self.currentIndex += 1
+
     def kickPlayer(self, id):
-        del self.player[id]
-
-    def Queue(self, ID, preferences):
-        # connect player to a new queue
-        if self.queue is None:
-            self.queue = Game(self.player[ID], self.currentIndex)  # Starts a new Game object
-            self.pendingpreferences = preferences
-        else:
-            # Gets the correct info to start the game
-            self.player[ID].gameid = self.currentIndex
-            self.queue.player1 = self.player[ID]
-
-            # Gets the cards of the game
-            gamecard = Deck.startGame(preferences, self.pendingpreferences)
-
-            # Sends the info to the players // TODO: randomise player 0 and 1
-            self.queue.player0.Send({"action": "startgame", "player": 0, "gameid": self.queue.gameid,
-                                     "cards": gamecard})
-
-            # Change gamecard for the other player
-            for i in range(2):
-                temp = gamecard[i]
-                gamecard[i] = gamecard[i + 2]
-                gamecard[i + 2] = temp
-            self.queue.player1.Send({"action": "startgame", "player": 1, "gameid": self.queue.gameid,
-                                     "cards": gamecard})
-
-            # Start the game
-            self.games.append(self.queue)
-            self.queue = None
-            self.currentIndex += 1
+        del self.playerchannels[id]
 
     # InQueue
-    def stopqueue(self):
-        self.queue = None
+    def quitqueue(self, playerid):
+        self.queue.removeplayer(self.playerchannels[playerid])
 
     # InGame
     def nextturn(self, num, gameid, card, board):
-        # on trouve la game correspondante
+
         game = [a for a in self.games if a.gameid == gameid]
         # Makes sure that there is not many games with the same ID
         if len(game) == 1:
-            game[0].nextturn(num, card, board)  # on part la fonction "next turn" dans game
+            game[0].nextturn(num, card, board)
 
     # Has left the game
     def leavingGame(self, gameid, num):
@@ -131,15 +108,63 @@ class Server(PodSixNet.Server.Server):  # classe du serveur comme tel
                 break
 
 
-class Game:
-    def __init__(self, player0, currentIndex):
-        self.turn = 0
+class Queue:
+    def __init__(self):
+        self.queue = list()
 
+    def addPlayer(self, playerchannel, playerpreferences):
+
+        if len(self.queue) >= 1:
+
+            player2 = self.queue.pop()
+            player2channel = player2["id"]
+            player2preferences = player2["preferences"]
+
+            Server.createNewGame({"player1": playerchannel, "player2": player2channel,
+                        "cards": Deck.getCardDeckAccordingToPreferences(player2preferences, playerpreferences)})
+
+        else:
+            self.queue.append({"id": playerchannel, "preferences": playerpreferences})
+
+    def removeplayer(self, playerchannel):
+
+        for i in range(len(self.queue)):
+            if self.queue[i]["id"] == playerchannel:
+                del self.queue[i]
+                break
+
+    def getsize(self):
+        return len(self.queue)
+
+
+class Game:
+    def __init__(self, currentIndex, gamecredentials):
         # initialises players
-        self.player0 = player0
-        self.player1 = None
+        self.player0 = gamecredentials["player1"]
+        self.player1 = gamecredentials["player2"]
+
+        self.randomizeplayers()
+
+        self.cards = gamecredentials["cards"]
 
         self.gameid = currentIndex
+
+        self.sendinitialinfotoplayers()
+
+    def randomizeplayers(self):
+        if random.randint(1) == 0:
+            temp = self.player0
+            self.player0 = self.player1
+            self.player1 = self.player0
+
+    def sendinitialinfotoplayers(self):
+        self.player0.Send({"action": "startgame", "player": 0, "gameid": self.gameid, "cards": self.cards})
+
+        # Change game card's order for the other player
+        Deck.reversedeck(self.cards)
+
+        self.player1.Send({"action": "startgame", "player": 1, "gameid": self.queue.gameid,
+                                 "cards": self.cards})
 
     def nextturn(self, num, card, board):
         if num == 1:
@@ -210,6 +235,12 @@ class Deck:
 
         return gamecards
 
+    def reversedeck(self, deck):
+        for i in range(2):
+            temp = deck[i]
+            deck[i] = deck[i + 2]
+            deck[i + 2] = temp
+
 
 class DeckBuilderHelper:
 
@@ -244,6 +275,7 @@ class DeckBuilderHelper:
 # stuff to run always here such as class/def
 def main():
     pass
+
 
 if __name__ == "__main__":
     # stuff only to run when not called via 'import' here
