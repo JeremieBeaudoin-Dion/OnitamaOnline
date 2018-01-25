@@ -11,6 +11,9 @@ class Game(ConnectionListener):
     The Game class handles flow control of the game and fps
     '''
     def __init__(self):
+        # Current version of the game
+        self.version = 0.3
+
         # server variables
         self.gameid = None
         self.num = None  # my ID according to the server
@@ -19,39 +22,60 @@ class Game(ConnectionListener):
         self.lost = False
 
         # Game State
-        self.state = "menu"
+        self.state = "server"
 
         self.host = "localhost"
         self.port = 8888
+        # Connects to the server
+        self.findserver()
+        self.serverID = None  # The id to send to the server when connecting to game rooms
 
-        # The game message to display -> informs the player of what the game is doing
-        self.allert = "Card preferences (optionnal)"
+        self.allert = "Connecting to server..."
 
         # game variables
         self.clock = pygame.time.Clock()
+
+    def findserver(self):
+        # Connects to a server game
+        self.Connect((self.host, int(self.port)))
 
     def quit(self):
         """
         Quits the game and makes sure the action is send to server
         """
-
         # Makes sure to send the right command to server
         if self.state == "inqueue":
-            self.Send({"action": "inqueueQUIT"})
-        elif self.state in ("ingame", "tomenu"):
-            self.Send({"action": "leaving", "gameid": self.gameid, "num": self.num})
+            self.Send({"action": "queueQUIT", "id": self.serverID})
+        elif self.state == "ingame":
+            self.Send({"action": "gameQUIT", "gameid": self.gameid, "num": self.num, "id": self.serverID})
+        else:
+            self.Send({"action": "QUIT", "id": self.serverID})
 
-        # Sends the action to server and exits the game
-        if self.state != "menu":
-            connection.Pump()
+        connection.Pump()
         self.Pump()
         pygame.quit()
         sys.exit(0)
 
+    def Network_connecting(self, data):
+        """
+        Quits the game and makes sure the action is send to server
+        """
+        self.serverID = data["id"]
+        serverVersion = float(data["version"])
+
+        if serverVersion > self.version:
+            self.state = "refused"
+            self.allert = "Your version is outdated. Please download the new one"
+        else:
+            # Get the player to the menu
+            self.state = "menu"
+            # The game message to display -> informs the player of what the game is doing
+            self.allert = "Card preferences (optionnal)"
+
     def Network_startgame(self, data):
-        '''
+        """
         Instanciates all variables of the current game and starts the game
-        '''
+        """
         self.num = data["player"]
         self.gameid = data["gameid"]
         allcards = data["cards"]
@@ -108,19 +132,21 @@ class Game(ConnectionListener):
         The Network sends that the other player has left the game.
         """
 
-        # If an enemy leaves the game, you win the game.
-        self.won = True
-        self.lost = False
+        # Make sure you are still in a game
+        if self.state == "ingame":
 
-        # Informs the player
-        self.allert = "The enemy has left the game. He so salty..."
+            # If an enemy leaves the game, you win the game.
+            self.won = True
+            self.lost = False
 
-        # Change game state
-        self.state = "tomenu"
+            # Informs the player
+            self.allert = "The enemy has left the game. He so salty..."
 
-        # Closes the connection to the game
-        self.Send({"action": "leaving", "gameid": self.gameid, "num": self.num})
-        connection.Close()
+            # Change game state
+            self.state = "tomenu"
+
+            # Closes the connection to the game
+            self.Send({"action": "endgame", "gameid": self.gameid, "num": self.num})
 
     def endturn(self):
         """
@@ -136,11 +162,14 @@ class Game(ConnectionListener):
         # That card is currently in Deck.hold instead of hand
         self.Send({"action": "endturn", "gameid": self.gameid, "num": self.num,
                    "card": Deck.hold[0], "board": board})
+        self.Pump()
         connection.Pump()
 
         # You can only win at the end of a turn
         self.won = Mapping.checkWin()
         if self.won:
+            # Sends to the server to close the current game
+            self.Send({"action": "endgame", "gameid": self.gameid, "num": self.num})
             # Tells the player and changes the game state
             self.allert = "You won! Click to go back to Menu."
             self.state = "tomenu"
@@ -166,15 +195,11 @@ class Game(ConnectionListener):
         # Clears the board for next game
         Mapping.clearBoard()
 
-        # Closes the connection to enable another game
-        connection.Close()
-
     def toQueue(self):
         """
         Changes game state and game variables to connect to the queue
         """
-        # Connects to a server game
-        self.Connect((self.host, int(self.port)))
+        self.Send({"action": "toqueue", "id": self.serverID, "preferences": Deck.chosenCards})
 
         # What to display to inform the player
         self.allert = "Searching for player..."
@@ -187,9 +212,8 @@ class Game(ConnectionListener):
         Controls game flow
         """
         # Connects to the server
-        if self.state in ("inqueue", "ingame"):
-            self.Pump()
-            connection.Pump()
+        self.Pump()
+        connection.Pump()
 
         # Updates the display
         Display.update(self.state)
@@ -240,14 +264,24 @@ class Display():
     def __init__(self):
         # Window attribute
         pygame.init()
+
+        infoObject = pygame.display.Info()
+        windowX = infoObject.current_w
+        windowY = infoObject.current_h
         self.width = 800
         self.height = 800
+        self.dimWindow = 1
+
+        if self.width > int(windowX) or self.height > int(windowY):
+            self.dimWindow = 0.8
+            self.width = 800 * self.dimWindow
+            self.height = 800 * self.dimWindow
 
         # Instantiate all variables concerning colours and pixel positions
         self.coordonatesValues()
 
         # Creates game Canvas
-        screen = pygame.display.set_mode((self.width, self.height))
+        screen = pygame.display.set_mode((int(self.width), int(self.height)))
         self.screen = screen
 
         # Sets up the display info
@@ -258,10 +292,10 @@ class Display():
         # Text font
         pygame.font.init()
 
-        self.fSizeIngame = 18
-        self.fSizeInmenu = 30
-        self.fSizeTitle = 40
-        self.fSizeCurrent = 30
+        self.fSizeIngame = int(18 * self.dimWindow)
+        self.fSizeInmenu = int(30 * self.dimWindow)
+        self.fSizeTitle = int(40 * self.dimWindow)
+        self.fSizeCurrent = int(30 * self.dimWindow)
 
         self.fontTitle = pygame.font.Font("Font.ttf", self.fSizeTitle)
         self.fontBig = pygame.font.Font("Font.ttf", self.fSizeInmenu)
@@ -285,39 +319,45 @@ class Display():
         # All game positions -> COOrdonates
         # Followed by their width and height -> DIMentions
         '''Game board'''
-        self.dimSquares = [100, 100]
-        self.cooBoard = [100, 150]
+        self.dimSquares = [int(100 * self.dimWindow), int(100 * self.dimWindow)]
+        self.cooBoard = [int(100 * self.dimWindow), int(150 * self.dimWindow)]
         self.dimSquaresinBoard = [5, 5]
-        self.dimBoard = [100 * self.dimSquaresinBoard[0], 100 * self.dimSquaresinBoard[1]]
+        self.dimBoard = [int(100 * self.dimSquaresinBoard[0] * self.dimWindow),
+                         int(100 * self.dimSquaresinBoard[1] * self.dimWindow)]
 
-        self.dimYLines = [self.dimSquares[0] * self.dimSquaresinBoard[0] + 5, 5]
+        self.dimYLines = [int(self.dimSquares[0] * self.dimSquaresinBoard[0] + 5 * self.dimWindow),
+                          int(5 * self.dimWindow)]
         self.dimXLines = [self.dimYLines[1], self.dimYLines[0]]
 
         self.dimCircles = [self.dimSquares[0]/2]
-        self.cooEnemyCircles = [self.cooBoard[0] + int(2.5 * self.dimSquares[0]) + self.dimXLines[0]/2,
-                                self.cooBoard[1]]
+        self.cooEnemyCircles = [int(self.cooBoard[0] + int(2.5 * self.dimSquares[0]) + self.dimXLines[0]/2),
+                                int(self.cooBoard[1] * self.dimWindow)]
         self.cooPlayerCircles = [self.cooEnemyCircles[0],
-                                 self.cooBoard[1] + self.dimSquaresinBoard[1] * self.dimSquares[1]]
+                                 int(self.cooBoard[1] * self.dimWindow + self.dimSquaresinBoard[1] * self.dimSquares[1])]
 
         '''Cards'''
-        self.cooPlayerCard = [[125, 700], [425, 700]]
-        self.cooEnemyCard = [[125, 50], [425, 50]]
-        self.cooHoldCard = [625, 375]
-        self.dimCards = [150, 70]
-        self.cooCardSeparation = [80]
-        self.dimSmallSquares = [12, 12]
+        self.cooPlayerCard = [[int(125 * self.dimWindow), int(700 * self.dimWindow)],
+                              [int(425 * self.dimWindow), int(700 * self.dimWindow)]]
+        self.cooEnemyCard = [[int(125 * self.dimWindow), int(50 * self.dimWindow)],
+                             [int(425 * self.dimWindow), int(50 * self.dimWindow)]]
+        self.cooHoldCard = [[int(625 * self.dimWindow), int(275 * self.dimWindow)],
+                            [int(625 * self.dimWindow), int(475 * self.dimWindow)]]
+        self.dimCards = [int(150 * self.dimWindow), int(70 * self.dimWindow)]
+        self.cooCardSeparation = [int(80 * self.dimWindow)]
+        self.dimSmallSquares = [int(12 * self.dimWindow), int(12 * self.dimWindow)]
 
-        self.dimSmallXLines = [1, 61]
-        self.dimSmallYLines = [61, 2]
+        self.dimSmallXLines = [1, int(61 * self.dimWindow)]
+        self.dimSmallYLines = [int(61 * self.dimWindow), 2]
 
-        self.dimFlipCard = [60]
+        self.dimFlipCard = [int(60 * self.dimWindow)]
 
         '''Menu buttons'''
-        self.cooButtons = [100, self.width/2 + 50]
-        self.dimButtons = [135, 50]
-        self.dimButtonSpace = [self.dimButtons[0] + 20, self.dimButtons[1] + 10]
-        self.dimButtonPlay = [160, 70]
-        self.cooButtonPlay = [self.width/2 - self.dimButtonPlay[0]/2, self.height/3.5]
+        self.cooButtons = [int(100 * self.dimWindow), int(self.width/2 + 50 * self.dimWindow)]
+        self.dimButtons = [int(135 * self.dimWindow), int(50 * self.dimWindow)]
+        self.dimButtonSpace = [int(self.dimButtons[0] + 20 * self.dimWindow),
+                                   int(self.dimButtons[1] + 10 * self.dimWindow)]
+        self.dimButtonPlay = [int(160 * self.dimWindow), int(70 * self.dimWindow)]
+        self.cooButtonPlay = [int(self.width/2 - self.dimButtonPlay[0]/2), int(self.height/3.5)]
 
     def blitCards(self):
         """
@@ -407,8 +447,11 @@ class Display():
         # The middle card
         for i in range(len(Deck.hold)):
             # Position and background color of card
-            posx = self.cooHoldCard[0]
-            posy = self.cooHoldCard[1]
+            posx = self.cooHoldCard[1][0]
+            posy = self.cooHoldCard[1][1]
+            if not Game.turn:
+                posx = self.cooHoldCard[0][0]
+                posy = self.cooHoldCard[0][1]
             maincolor = self.colourGold
             opositecolor = (0, 0, 0)
 
@@ -419,11 +462,11 @@ class Display():
             text = self.fontSmall.render(Deck.hold[i], 1, opositecolor)
             if Game.turn:
                 self.screen.blit(text, (posx + (self.dimCards[0]/3.5 - len(Deck.hand[i])/2 * self.fSizeIngame/2),
-                                    posy + self.dimCards[1]/3.5))
+                                        posy + self.dimCards[1]/3.5))
             else:
                 self.screen.blit(text, (posx + self.dimFlipCard[0] +
-                                    (self.dimCards[0]/3.5 - len(Deck.hand[i])/2 * self.fSizeIngame/2),
-                                    posy + self.dimCards[1]/3.5))
+                                        (self.dimCards[0]/3.5 - len(Deck.hand[i])/2 * self.fSizeIngame/2),
+                                        posy + self.dimCards[1]/3.5))
 
             if Game.turn:
                 # representation of the squares
