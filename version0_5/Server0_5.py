@@ -10,7 +10,13 @@ import threading
 class ClientChannel(Channel):  # cette classe sert de pont entre le client et le serveur
 
     def Network(self, data):
-        print data
+
+        try:
+            if data["hello"]:
+                pass
+
+        except KeyError as k:
+            print data
 
     # InGAME
     def Network_gameQUIT(self, data):
@@ -90,6 +96,9 @@ class Server(PodSixNet.Server.Server):
     # InQueue
     def quitqueue(self, playerid):
         self.queue.removeplayer(self.playerchannels[playerid])
+
+    def hello_player(self, playerid):
+        self.playerchannels[playerid].Send({"action": "hello"})
 
     # InGame
     def nextturn(self, num, gameid, card, board):
