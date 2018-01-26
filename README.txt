@@ -9,3 +9,6 @@ TO PLAY THE GAME:
   2) Run the Onitama0.4.exe
   3) If nobody is connected, go to the facebook page https://www.facebook.com/groups/366994350345150/
       to find friends to play with!
+      
+The game is also available for download here:
+https://gamejolt.com/games/onitamaonline/314210
