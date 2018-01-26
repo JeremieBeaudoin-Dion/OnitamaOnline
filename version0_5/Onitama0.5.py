@@ -1028,13 +1028,17 @@ class Selector():
         # Checks for click on preference button
         counterx = 0
         countery = 0
-        for key in Deck.card:
+
+        all_cards_in_order = Deck.card_green + Deck.card_blue + Deck.card_red + Deck.extension_card_green + \
+            Deck.extension_card_blue + Deck.extension_card_red
+
+        for card in all_cards_in_order:
             if Display.cooButtons[0] + Display.dimButtonSpace[0] * counterx < posx \
                     < Display.cooButtons[0] + Display.dimButtonSpace[0] * counterx + Display.dimButtons[0] and \
                 Display.cooButtons[1] + Display.dimButtonSpace[1] * countery < posy \
                     < Display.cooButtons[1] + Display.dimButtonSpace[1] * countery + Display.dimButtons[1]:
 
-                Deck.preferences(key)
+                Deck.preferences(card)
                 return
 
             counterx += 1
