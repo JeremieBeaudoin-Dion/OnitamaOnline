@@ -344,8 +344,8 @@ class Display():
         if self.width > int(windowX) or self.height > int(windowY):
             self.dimWindowx = 0.6
             self.dimWindowy = 0.6
-            self.width = 800 * self.dimWindow
-            self.height = 800 * self.dimWindow
+            self.width = 800 * self.dimWindowx
+            self.height = 800 * self.dimWindowy
 
         if self.width > int(windowX) or self.height > int(windowY):
             self.dimWindowx = 0.6
